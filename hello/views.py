@@ -11,21 +11,20 @@ import pandas as pd
 import openai
 import numpy as np
 
-from resemble import Resemble
+# from resemble import Resemble
 
 import os
 
 load_dotenv('.env')
 
-Resemble.api_key(os.environ["RESEMBLE_API_KEY"])
 openai.api_key = os.environ["OPENAI_API_KEY"]
 
 COMPLETIONS_MODEL = "text-davinci-003"
 
 MODEL_NAME = "curie"
 
-DOC_EMBEDDINGS_MODEL = f"text-search-{MODEL_NAME}-doc-001"
-QUERY_EMBEDDINGS_MODEL = f"text-search-{MODEL_NAME}-query-001"
+DOC_EMBEDDINGS_MODEL = "text-embedding-ada-002"
+QUERY_EMBEDDINGS_MODEL = "text-embedding-ada-002"
 
 MAX_SECTION_LEN = 500
 SEPARATOR = "\n* "
@@ -81,7 +80,9 @@ def load_embeddings(fname: str) -> dict[tuple[str, str], list[float]]:
         "title", "0", "1", ... up to the length of the embedding vectors.
     """
 
+
     df = pd.read_csv(fname, header=0)
+    print(df)
     max_dim = max([int(c) for c in df.columns if c != "title"])
     return {
            (r.title): [r[str(i)] for i in range(max_dim + 1)] for _, r in df.iterrows()
@@ -110,7 +111,7 @@ def construct_prompt(question: str, context_embeddings: dict, df: pd.DataFrame) 
         chosen_sections.append(SEPARATOR + document_section.content)
         chosen_sections_indexes.append(str(section_index))
 
-    header = """Sahil Lavingia is the founder and CEO of Gumroad, and the author of the book The Minimalist Entrepreneur (also known as TME). These are questions and answers by him. Please keep your answers to three sentences maximum, and speak in complete sentences. Stop speaking once your point is made.\n\nContext that may be useful, pulled from The Minimalist Entrepreneur:\n"""
+    header = """Sam Udotong is the CTO for Fireflies.AI, an AI notetaking software for meetings that optimizes work and automatically takes meeting notes. These are questions and answers by him. Please keep your answers to three sentences maximum, and speak in complete sentences. Stop speaking once your point is made. Answer only questions about Fireflies.AI and don't go off topic. If someone asks you something outside of the Fireflies.AI context, explicitly and politely say you can't answer the question.\n\nContext that may be useful, pulled from the Fireflies.AI Help Desk:\n"""
 
     question_1 = "\n\n\nQ: How to choose what business to start?\n\nA: First off don't be in a rush. Look around you, see what problems you or other people are facing, and solve one of these problems if you see some overlap with your passions or skills. Or, even if you don't see an overlap, imagine how you would solve that problem anyway. Start super, super small."
     question_2 = "\n\n\nQ: Q: Should we start the business on the side first or should we put full effort right from the start?\n\nA:   Always on the side. Things start small and get bigger from there, and I don't know if I would ever “fully” commit to something unless I had some semblance of customer traction. Like with this product I'm working on now!"
@@ -123,7 +124,7 @@ def construct_prompt(question: str, context_embeddings: dict, df: pd.DataFrame) 
     question_9 = "\n\n\nQ: What is the best way to distribute surveys to test my product idea\n\nA: I use Google Forms and my email list / Twitter account. Works great and is 100% free."
     question_10 = "\n\n\nQ: How do you know, when to quit\n\nA: When I'm bored, no longer learning, not earning enough, getting physically unhealthy, etc… loads of reasons. I think the default should be to “quit” and work on something new. Few things are worth holding your attention for a long period of time."
 
-    return (header + "".join(chosen_sections) + question_1 + question_2 + question_3 + question_4 + question_5 + question_6 + question_7 + question_8 + question_9 + question_10 + "\n\n\nQ: " + question + "\n\nA: "), ("".join(chosen_sections))
+    return (header + "What is Fireflies Notebook? Your Notebook is where you can find all your meetings, team meetings, and uploaded files. The Fireflies Notebook is a central place for storing meetings that are yours and those done by the rest of your team. Here, you can search through all your meetings and at a glance, get more information about the date and duration of the meeting.  Clicking on an individual meeting will allow you to listen to the audio, view your transcript, leave comments and create Soundbites." + question + "\n\nA: "), ("".join(chosen_sections))
 
 def answer_query_with_context(
     query: str,
@@ -151,41 +152,36 @@ def index(request):
 @csrf_exempt
 def ask(request):
     question_asked = request.POST.get("question", "")
+    print('REACHED')
 
     if not question_asked.endswith('?'):
         question_asked += '?'
 
     previous_question = Question.objects.filter(question=question_asked).first()
-    audio_src_url = previous_question and previous_question.audio_src_url if previous_question else None
-
-    if audio_src_url:
-        print("previously asked and answered: " + previous_question.answer + " ( " + previous_question.audio_src_url + ")")
-        previous_question.ask_count = previous_question.ask_count + 1
-        previous_question.save()
-        return JsonResponse({ "question": previous_question.question, "answer": previous_question.answer, "audio_src_url": audio_src_url, "id": previous_question.pk })
 
     df = pd.read_csv('book.pdf.pages.csv')
     document_embeddings = load_embeddings('book.pdf.embeddings.csv')
+    # print(document_embeddings)
     answer, context = answer_query_with_context(question_asked, df, document_embeddings)
 
     project_uuid = '6314e4df'
     voice_uuid = '0eb3a3f1'
 
-    response = Resemble.v2.clips.create_sync(
-        project_uuid,
-        voice_uuid,
-        answer,
-        title=None,
-        sample_rate=None,
-        output_format=None,
-        precision=None,
-        include_timestamps=None,
-        is_public=None,
-        is_archived=None,
-        raw=None
-    )
+    # response = Resemble.v2.clips.create_sync(
+    #     project_uuid,
+    #     voice_uuid,
+    #     answer,
+    #     title=None,
+    #     sample_rate=None,
+    #     output_format=None,
+    #     precision=None,
+    #     include_timestamps=None,
+    #     is_public=None,
+    #     is_archived=None,
+    #     raw=None
+    # )
 
-    question = Question(question=question_asked, answer=answer, context=context, audio_src_url=response['item']['audio_src'])
+    question = Question(question=question_asked, answer=answer, context=context, audio_src_url='')
     question.save()
 
     return JsonResponse({ "question": question.question, "answer": answer, "audio_src_url": question.audio_src_url, "id": question.pk })
